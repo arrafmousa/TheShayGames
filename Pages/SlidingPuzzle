@@ -1,0 +1,364 @@
+
+import React, { useState, useEffect } from "react";
+import { GameScore } from "@/entities/GameScore";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { ArrowLeft, RotateCcw, Trophy, Clock, Shuffle, Image as ImageIcon } from "lucide-react";
+import { Link } from "react-router-dom";
+import { createPageUrl } from "@/utils";
+
+export default function SlidingPuzzle() {
+  const [difficulty, setDifficulty] = useState(3);
+  const [gameStarted, setGameStarted] = useState(false);
+  const [tiles, setTiles] = useState([]);
+  const [moves, setMoves] = useState(0);
+  const [time, setTime] = useState(0);
+  const [gameComplete, setGameComplete] = useState(false);
+  const [currentImage, setCurrentImage] = useState(null);
+  const [gameImages, setGameImages] = useState([]);
+  const [gridSize, setGridSize] = useState(400);
+
+  const emptyTileValue = difficulty * difficulty - 1;
+
+  useEffect(() => {
+    loadGameImages();
+    // Adjust grid size for smaller screens
+    const handleResize = () => {
+      if (window.innerWidth < 640) {
+        setGridSize(300);
+      } else {
+        setGridSize(400);
+      }
+    };
+    window.addEventListener('resize', handleResize);
+    handleResize();
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+  
+  const loadGameImages = () => {
+    const storedImages = localStorage.getItem('gameImages');
+    if (storedImages) {
+      try {
+        const imageData = JSON.parse(storedImages);
+        if (Array.isArray(imageData)) {
+          setGameImages(imageData);
+        } else {
+          const imageArray = Object.values(imageData);
+          setGameImages(imageArray.map((url, index) => ({ id: `img_${index}`, url, name: `Image ${index + 1}` })));
+        }
+      } catch (error) {
+        console.error("Error loading images:", error);
+        setGameImages([]);
+      }
+    }
+  };
+
+  useEffect(() => {
+    let interval;
+    if (gameStarted && !gameComplete) {
+      interval = setInterval(() => {
+        setTime(prev => prev + 1);
+      }, 1000);
+    }
+    return () => clearInterval(interval);
+  }, [gameStarted, gameComplete]);
+
+  const getNeighbors = (index, size) => {
+    const neighbors = [];
+    const row = Math.floor(index / size);
+    const col = index % size;
+    if (row > 0) neighbors.push(index - size); // Up
+    if (row < size - 1) neighbors.push(index + size); // Down
+    if (col > 0) neighbors.push(index - 1); // Left
+    if (col < size - 1) neighbors.push(index + 1); // Right
+    return neighbors;
+  };
+
+  const initializeGame = () => {
+    if (gameImages.length === 0) {
+      alert("Please upload images first to play the sliding puzzle.");
+      return;
+    }
+
+    const size = difficulty;
+    const totalTiles = size * size;
+    const randomImage = gameImages[Math.floor(Math.random() * gameImages.length)];
+    setCurrentImage(randomImage.url);
+
+    // Start with solved state (0, 1, 2, ... , n-2, n-1 where n-1 is empty)
+    let solvedTiles = Array.from({ length: totalTiles }, (_, i) => i);
+    
+    // Shuffle by making random valid moves from solved state
+    let emptyIndex = emptyTileValue; // Start with empty at bottom-right
+    for (let i = 0; i < 500; i++) {
+        const neighbors = getNeighbors(emptyIndex, size);
+        const randomNeighborIndex = neighbors[Math.floor(Math.random() * neighbors.length)];
+        // Swap empty tile with a random neighbor
+        [solvedTiles[emptyIndex], solvedTiles[randomNeighborIndex]] = [solvedTiles[randomNeighborIndex], solvedTiles[emptyIndex]];
+        emptyIndex = randomNeighborIndex;
+    }
+
+    setTiles(solvedTiles);
+    setMoves(0);
+    setTime(0);
+    setGameComplete(false);
+    setGameStarted(true);
+  };
+  
+  const handleTileClick = (clickedIndex) => {
+    if (gameComplete) return;
+
+    const emptyIndex = tiles.indexOf(emptyTileValue);
+    const neighbors = getNeighbors(emptyIndex, difficulty);
+
+    if (neighbors.includes(clickedIndex)) {
+      const newTiles = [...tiles];
+      [newTiles[emptyIndex], newTiles[clickedIndex]] = [newTiles[clickedIndex], newTiles[emptyIndex]];
+      setTiles(newTiles);
+      setMoves(prev => prev + 1);
+      checkCompletion(newTiles);
+    }
+  };
+
+  const checkCompletion = (currentTiles) => {
+    const isSolved = currentTiles.every((tile, index) => tile === index);
+    if (isSolved) {
+      setGameComplete(true);
+      saveScore();
+    }
+  };
+
+  const saveScore = async () => {
+    try {
+      const score = Math.max(2000 - (moves * 5) - (time * 3), 100);
+      await GameScore.create({
+        game_type: "sliding_puzzle",
+        score: score,
+        time_seconds: time,
+        difficulty: `${difficulty}x${difficulty}`
+      });
+    } catch (error) {
+      console.error("Error saving score:", error);
+    }
+  };
+
+  const resetGame = () => {
+    setGameStarted(false);
+    setTiles([]);
+    setMoves(0);
+    setTime(0);
+    setGameComplete(false);
+    setCurrentImage(null);
+  };
+
+  if (!gameStarted) {
+    return (
+      <div className="min-h-screen p-6 pb-20 md:pb-6">
+        <div className="max-w-4xl mx-auto">
+          <div className="flex items-center gap-4 mb-8">
+            <Link to={createPageUrl("GameHub")}>
+              <Button variant="outline" size="icon" className="border-blue-500/30 text-blue-300 hover:bg-blue-500/20">
+                <ArrowLeft className="w-4 h-4" />
+              </Button>
+            </Link>
+            <div>
+              <h1 className="text-3xl font-bold text-white">Sliding Puzzle</h1>
+              <p className="text-gray-400">Arrange tiles to complete the image</p>
+            </div>
+          </div>
+
+          <Card className="game-card border-0 max-w-2xl mx-auto">
+            <CardContent className="p-8 text-center">
+              {gameImages.length === 0 ? (
+                <div className="mb-8">
+                  <h2 className="text-2xl font-bold text-white mb-4">No Images Available</h2>
+                  <p className="text-gray-400 mb-6">
+                    You need to upload images first to play the sliding puzzle.
+                  </p>
+                  <Link to={createPageUrl("ImageManager")}>
+                    <Button className="bg-gradient-to-r from-blue-500 to-cyan-500 hover:opacity-90">
+                      <ImageIcon className="w-5 h-5 mr-2" />
+                      Upload Images
+                    </Button>
+                  </Link>
+                </div>
+              ) : (
+                <>
+                  <div className="mb-8">
+                    <h2 className="text-2xl font-bold text-white mb-4">Choose Grid Size</h2>
+                    <p className="text-gray-400 mb-6">Using {gameImages.length} uploaded images</p>
+                    
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                      {[3, 4, 5].map((size) => (
+                        <Button
+                          key={size}
+                          variant={difficulty === size ? "default" : "outline"}
+                          className={`p-6 h-auto flex flex-col gap-2 ${
+                            difficulty === size 
+                              ? "bg-gradient-to-r from-blue-500 to-cyan-500" 
+                              : "border-blue-500/30 text-blue-300 hover:bg-blue-500/20"
+                          }`}
+                          onClick={() => setDifficulty(size)}
+                        >
+                          <span className="font-bold">{size}×{size}</span>
+                          <span className="text-sm opacity-80">{size * size - 1} tiles</span>
+                        </Button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <Button
+                    onClick={initializeGame}
+                    className="bg-gradient-to-r from-blue-500 to-cyan-500 hover:opacity-90 px-8 py-3 text-lg font-semibold"
+                  >
+                    <Shuffle className="w-5 h-5 mr-2" />
+                    Start Puzzle
+                  </Button>
+                </>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen p-6 pb-20 md:pb-6">
+      <div className="max-w-6xl mx-auto">
+        <div className="flex items-center justify-between mb-8">
+          <div className="flex items-center gap-4">
+            <Link to={createPageUrl("GameHub")}>
+              <Button variant="outline" size="icon" className="border-blue-500/30 text-blue-300 hover:bg-blue-500/20">
+                <ArrowLeft className="w-4 h-4" />
+              </Button>
+            </Link>
+            <div>
+              <h1 className="text-3xl font-bold text-white">Sliding Puzzle</h1>
+              <Badge className="bg-blue-500/20 text-blue-300 border-blue-500/30 mt-1">
+                {difficulty}×{difficulty} Grid
+              </Badge>
+            </div>
+          </div>
+
+          <Button
+            onClick={resetGame}
+            variant="outline"
+            className="border-blue-500/30 text-blue-300 hover:bg-blue-500/20"
+          >
+            <RotateCcw className="w-4 h-4 mr-2" />
+            New Puzzle
+          </Button>
+        </div>
+
+        {/* Game Stats */}
+        <div className="grid grid-cols-2 gap-4 mb-8 max-w-md mx-auto">
+          <Card className="game-card border-0">
+            <CardContent className="p-4 text-center">
+              <Clock className="w-6 h-6 text-blue-400 mx-auto mb-2" />
+              <p className="text-2xl font-bold text-white">{Math.floor(time / 60)}:{(time % 60).toString().padStart(2, '0')}</p>
+              <p className="text-sm text-gray-400">Time</p>
+            </CardContent>
+          </Card>
+          
+          <Card className="game-card border-0">
+            <CardContent className="p-4 text-center">
+              <Shuffle className="w-6 h-6 text-cyan-400 mx-auto mb-2" />
+              <p className="text-2xl font-bold text-white">{moves}</p>
+              <p className="text-sm text-gray-400">Moves</p>
+            </CardContent>
+          </Card>
+        </div>
+
+        <div className="flex flex-col md:flex-row justify-center items-center md:items-start gap-8">
+          {/* Puzzle Grid */}
+          <div className="flex-shrink-0">
+            <h3 className="text-white font-semibold mb-4 text-center">Puzzle</h3>
+            <div 
+              className="grid gap-1 mx-auto aspect-square bg-gray-800 p-2 rounded-xl shadow-lg"
+              style={{ 
+                gridTemplateColumns: `repeat(${difficulty}, 1fr)`,
+                width: `${gridSize}px`,
+                height: `${gridSize}px`,
+              }}
+            >
+              {tiles.map((tileValue, index) => {
+                if (tileValue === emptyTileValue) {
+                  return <div key={index} className="bg-gray-700 rounded-lg" />;
+                }
+
+                const row = Math.floor(tileValue / difficulty);
+                const col = tileValue % difficulty;
+                
+                return (
+                  <div
+                    key={index}
+                    onClick={() => handleTileClick(index)}
+                    className="bg-cover bg-no-repeat rounded-lg cursor-pointer transition-transform duration-200 hover:scale-105"
+                    style={{
+                      backgroundImage: `url(${currentImage})`,
+                      backgroundPosition: `${col * (100 / (difficulty - 1))}% ${row * (100 / (difficulty - 1))}%`,
+                      backgroundSize: `${difficulty * 100}% ${difficulty * 100}%`,
+                    }}
+                  />
+                );
+              })}
+            </div>
+          </div>
+          
+          {/* Reference Image */}
+          <div className="flex-shrink-0">
+            <h3 className="text-white font-semibold mb-4 text-center">Reference</h3>
+            <Card className="game-card border-0 overflow-hidden shadow-lg">
+              <img 
+                src={currentImage}
+                alt="Reference"
+                style={{ width: '150px', height: '150px' }}
+                className="object-cover"
+              />
+            </Card>
+          </div>
+        </div>
+
+        {/* Game Complete Modal */}
+        {gameComplete && (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+            <Card className="game-card border-0 max-w-md w-full">
+              <CardContent className="p-8 text-center">
+                <Trophy className="w-16 h-16 text-yellow-400 mx-auto mb-4" />
+                <h2 className="text-2xl font-bold text-white mb-4">Puzzle Solved!</h2>
+                <p className="text-gray-300 mb-6">Great job completing the sliding puzzle!</p>
+                
+                <div className="grid grid-cols-2 gap-4 mb-6">
+                  <div>
+                    <p className="text-2xl font-bold text-blue-300">{moves}</p>
+                    <p className="text-sm text-gray-400">Moves</p>
+                  </div>
+                  <div>
+                    <p className="text-2xl font-bold text-cyan-300">{time}s</p>
+                    <p className="text-sm text-gray-400">Time</p>
+                  </div>
+                </div>
+
+                <div className="flex gap-4">
+                  <Button 
+                    onClick={resetGame}
+                    className="flex-1 bg-gradient-to-r from-blue-500 to-cyan-500 hover:opacity-90"
+                  >
+                    New Puzzle
+                  </Button>
+                  <Link to={createPageUrl("GameHub")} className="flex-1">
+                    <Button variant="outline" className="w-full border-blue-500/30 text-blue-300 hover:bg-blue-500/20">
+                      Back to Hub
+                    </Button>
+                  </Link>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
