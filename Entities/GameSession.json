@@ -1,0 +1,31 @@
+{
+  "name": "GameSession",
+  "type": "object",
+  "properties": {
+    "game_type": {
+      "type": "string",
+      "enum": [
+        "memory_match",
+        "floppy_shay",
+        "jigsaw_puzzle"
+      ],
+      "description": "Type of game played"
+    },
+    "score": {
+      "type": "number",
+      "description": "Score achieved in the game"
+    },
+    "completed": {
+      "type": "boolean",
+      "description": "Whether the game was completed"
+    },
+    "duration": {
+      "type": "number",
+      "description": "Time taken to complete game in seconds"
+    }
+  },
+  "required": [
+    "game_type",
+    "completed"
+  ]
+}
